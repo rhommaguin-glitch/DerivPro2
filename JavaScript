@@ -1,0 +1,88 @@
+
+const appId = 1089;
+const symbol = "R_100";
+let socket;
+let prices = [];
+
+function connectDeriv() {
+  socket = new WebSocket(
+    `wss://ws.derivws.com/websockets/v3?app_id=${appId}`
+  );
+
+  socket.onopen = () => {
+    show("status", "Connected to Deriv");
+    socket.send(JSON.stringify({
+      ticks: symbol,
+      subscribe: 1
+    }));
+  };
+
+  socket.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+
+    if (data.error) {
+      show("status", data.error.message);
+      return;
+    }
+
+    if (!data.tick) return;
+
+    const price = Number(data.tick.quote);
+    prices.push(price);
+
+    if (prices.length > 100) prices.shift();
+
+    show("live-price", price.toFixed(2));
+    analyze();
+  };
+
+  socket.onclose = () => {
+    show("status", "Reconnecting...");
+    setTimeout(connectDeriv, 3000);
+  };
+}
+
+function show(id, value) {
+  const element = document.getElementById(id);
+  if (element) element.textContent = value;
+}
+
+function analyze() {
+  if (prices.length < 20) return;
+
+  const recent = prices.slice(-10);
+  const previous = prices.slice(-20, -10);
+
+  const avg = values =>
+    values.reduce((a, b) => a + b, 0) /
+    values.length;
+
+  const rise = avg(recent) > avg(previous);
+
+  show("signal", rise ? "RISE" : "FALL");
+  show("prediction", rise ? "RISE" : "FALL");
+
+  const digits = prices.slice(-20).map(price =>
+    Number(String(price.toFixed(2)).slice(-1))
+  );
+
+  const lastDigit = digits[digits.length - 1];
+
+  show("even-odd",
+    lastDigit % 2 === 0 ? "EVEN" : "ODD"
+  );
+
+  show("over-under",
+    lastDigit > 4 ? "OVER 4" : "UNDER 5"
+  );
+
+  const matches = digits.filter(
+    digit => digit === lastDigit
+  ).length;
+
+  show("matches",
+    `${matches} matches in 20 ticks`
+  );
+}
+
+connectDeriv();
